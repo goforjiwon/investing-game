@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>5인 공동투자 게임</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>5인 공동투자 게임</h1>
+      <p>반복 라운드에서 협력과 무임승차를 관찰하는 실시간 공동기금 실험형 게임</p>
+    </header>
+
+    <section class="card setup" id="setupCard">
+      <h2>게임 설정</h2>
+      <div class="grid">
+        <label>총 라운드 수
+          <input id="roundCount" type="number" min="1" max="30" value="10" />
+        </label>
+        <label>라운드 제한 시간(초)
+          <input id="roundTime" type="number" min="10" max="180" value="30" />
+        </label>
+        <label>내 익명 코드
+          <select id="myPlayerCode"></select>
+        </label>
+      </div>
+      <button id="startBtn" class="primary">5명 입장 완료, 게임 시작</button>
+      <p class="hint">규칙: 매 라운드 10토큰 지급, 0~10토큰 비공개 투자, 공동기금 2배 후 5명 균등 분배</p>
+    </section>
+
+    <section class="card hidden" id="gameCard">
+      <div class="status-row">
+        <div>
+          <h2 id="roundTitle">라운드 1 / 10</h2>
+          <p id="timer">남은 시간: 30초</p>
+        </div>
+        <button id="resetBtn" class="danger">게임 초기화</button>
+      </div>
+
+      <div id="entryPanel" class="entry-panel">
+        <h3 id="entryTitle">P1 투자 입력</h3>
+        <p class="hint">다른 플레이어가 보지 않도록 입력 후 제출하세요.</p>
+        <input id="contributionInput" type="number" min="0" max="10" step="1" value="0" />
+        <div class="buttons">
+          <button id="submitContribution" class="primary">입력 제출</button>
+          <button id="nextPlayer" disabled>다음 플레이어 준비</button>
+        </div>
+      </div>
+
+      <div id="roundResult" class="hidden">
+        <h3>라운드 결과</h3>
+        <div class="result-grid">
+          <div><strong>전체 투자 총액</strong><span id="totalContribution">0</span></div>
+          <div><strong>2배 적용 후 총 분배액</strong><span id="amplifiedFund">0</span></div>
+          <div><strong>1인당 분배액</strong><span id="sharePerPlayer">0</span></div>
+          <div><strong>그룹 평균 투자액</strong><span id="avgContribution">0</span></div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>플레이어</th>
+              <th>투자액</th>
+              <th>남긴 토큰</th>
+              <th>분배액</th>
+              <th>라운드 점수</th>
+              <th>누적 점수</th>
+            </tr>
+          </thead>
+          <tbody id="resultTableBody"></tbody>
+        </table>
+
+        <section class="me-box">
+          <h4>내 정보 (<span id="meCode">P1</span>)</h4>
+          <p>내 투자액: <strong id="myContribution">0</strong></p>
+          <p>내가 받은 분배액: <strong id="myShare">0</strong></p>
+          <p>내 라운드 점수: <strong id="myRoundScore">0</strong></p>
+          <p>내 누적 점수: <strong id="myTotalScore">0</strong></p>
+        </section>
+
+        <div class="buttons">
+          <button id="nextRoundBtn" class="primary">다음 라운드</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="finalCard">
+      <h2>게임 종료</h2>
+      <p>10라운드가 종료되었습니다. 최종 점수를 확인하세요.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>플레이어</th>
+            <th>최종 누적 점수</th>
+            <th>평균 투자액</th>
+          </tr>
+        </thead>
+        <tbody id="finalTableBody"></tbody>
+      </table>
+      <button id="restartBtn" class="primary">새 게임 시작</button>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
