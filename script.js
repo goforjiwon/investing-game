@@ -1,3 +1,18 @@
+// ==== Supabase Configuration ====
+// IMPORTANT: Replace with your actual Supabase project credentials
+const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+
+let supabase = null;
+let roomChannel = null;
+
+// Initialize Supabase client
+try {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch (err) {
+  console.error('Supabase init error:', err);
+}
+
 const PLAYER_CODES = ["P1", "P2", "P3", "P4", "P5"];
 const TOKENS_PER_ROUND = 10;
 const FUND_MULTIPLIER = 2.5;
@@ -28,13 +43,100 @@ const state = {
   nicknameMap: Object.fromEntries(PLAYER_CODES.map((p) => [p, p])),
   myCode: "P1",
   inviteCode: "",
+  roomId: null,
+  players: [],
+  isHost: false,
   timer: null,
   remainingSec: ROUND_TIME_SEC,
   roundMessages: [],
 };
 
-const els = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map((el) => [el.id, el]));
+const els = Object.fromEntries(
+  Array.from(document.querySelectorAll('[id]')).map((el) => [el.id, el])
+);
 
+// ==== Supabase Room Functions ====
+async function createRoom() {
+  if (!supabase) return alert('Supabase not configured');
+  const roomCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const { data, error } = await supabase.from('rooms').insert({
+    room_code: roomCode,
+    state: { round: 1, phase: 'lobby', players: {} },
+    created_at: new Date().toISOString()
+  }).select().single();
+  
+  if (error) {
+    console.error('Room creation error:', error);
+    alert('방 생성 실패');
+    return null;
+  }
+  return data;
+}
+
+async function joinRoom(roomCode) {
+  if (!supabase) return alert('Supabase not configured');
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('*')
+    .eq('room_code', roomCode)
+    .single();
+  
+  if (error || !data) {
+    alert('방을 찾을 수 없습니다');
+    return null;
+  }
+  return data;
+}
+
+async function subscribeToRoom(roomId) {
+  if (!supabase || !roomId) return;
+  
+  roomChannel = supabase.channel(`room:${roomId}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'rooms',
+      filter: `id=eq.${roomId}`
+    }, (payload) => {
+      console.log('Room update:', payload);
+      handleRoomUpdate(payload.new);
+    })
+    .subscribe();
+}
+
+function handleRoomUpdate(roomData) {
+  if (!roomData || !roomData.state) return;
+  // Sync game state from database
+  const dbState = roomData.state;
+  if (dbState.round) state.currentRound = dbState.round;
+  if (dbState.players) {
+    state.players = Object.keys(dbState.players);
+    updateLobbyStatus();
+  }
+}
+
+async function updateRoomState(updates) {
+  if (!supabase || !state.roomId) return;
+  const { data: current } = await supabase
+    .from('rooms')
+    .select('state')
+    .eq('id', state.roomId)
+    .single();
+  
+  const newState = { ...current?.state, ...updates };
+  await supabase
+    .from('rooms')
+    .update({ state: newState })
+    .eq('id', state.roomId);
+}
+
+function updateLobbyStatus() {
+  const count = state.players.length;
+  els.lobbyStatus.textContent = `현재 입장: ${count}/5명`;
+  els.startBtn.disabled = count < 5;
+}
+
+// ==== Init ====
 function init() {
   PLAYER_CODES.forEach((code) => {
     const option = document.createElement("option");
@@ -50,7 +152,8 @@ function init() {
     els.messageSelect.append(option);
   });
 
-  els.generateCodeBtn.addEventListener("click", generateInviteCode);
+  els.generateCodeBtn.addEventListener("click", handleCreateRoom);
+  els.joinRoomBtn.addEventListener("click", handleJoinRoom);
   els.startBtn.addEventListener("click", startGame);
   els.submitDeclaration.addEventListener("click", submitDeclaration);
   els.submitMessage.addEventListener("click", submitMessage);
@@ -61,28 +164,86 @@ function init() {
   els.resetBtn.addEventListener("click", resetToSetup);
   els.restartBtn.addEventListener("click", resetToSetup);
 
-  generateInviteCode();
+  updateLobbyStatus();
 }
 
-function generateInviteCode() {
-  state.inviteCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+async function handleCreateRoom() {
+  const room = await createRoom();
+  if (!room) return;
+  
+  state.roomId = room.id;
+  state.inviteCode = room.room_code;
+  state.isHost = true;
+  
   els.inviteCode.textContent = state.inviteCode;
+  
+  await subscribeToRoom(state.roomId);
+  
+  // Register self as player
+  const myNick = (els.myNickname.value || '나').trim();
+  const myCode = els.myPlayerCode.value;
+  state.myCode = myCode;
+  state.nicknameMap[myCode] = myNick;
+  state.players.push(myCode);
+  
+  await updateRoomState({
+    players: { [myCode]: { nickname: myNick, ready: true } }
+  });
+  
+  updateLobbyStatus();
+}
+
+async function handleJoinRoom() {
+  const roomCode = els.joinCodeInput.value.trim().toUpperCase();
+  if (!roomCode) return alert('방 코드를 입력하세요');
+  
+  const room = await joinRoom(roomCode);
+  if (!room) return;
+  
+  state.roomId = room.id;
+  state.inviteCode = room.room_code;
+  state.isHost = false;
+  
+  els.inviteCode.textContent = state.inviteCode;
+  
+  await subscribeToRoom(state.roomId);
+  
+  const myNick = (els.myNickname.value || '나').trim();
+  const myCode = els.myPlayerCode.value;
+  state.myCode = myCode;
+  state.nicknameMap[myCode] = myNick;
+  
+  // Add self to room
+  const { data: current } = await supabase
+    .from('rooms')
+    .select('state')
+    .eq('id', state.roomId)
+    .single();
+  
+  const players = current.state.players || {};
+  players[myCode] = { nickname: myNick, ready: true };
+  
+  await updateRoomState({ players });
+  
+  state.players = Object.keys(players);
+  updateLobbyStatus();
 }
 
 function startGame() {
-  state.myCode = els.myPlayerCode.value;
+  if (!state.isHost) return alert('방장만 시작할 수 있습니다');
+  if (state.players.length < 5) return alert('5명이 모여야 시작할 수 있습니다');
+  
   state.currentRound = 1;
   state.totalScores = Object.fromEntries(PLAYER_CODES.map((p) => [p, 0]));
   state.warningTally = Object.fromEntries(PLAYER_CODES.map((p) => [p, 0]));
   state.penalties = Object.fromEntries(PLAYER_CODES.map((p) => [p, 0]));
   state.contributionHistory = Object.fromEntries(PLAYER_CODES.map((p) => [p, []]));
 
-  const baseName = (els.myNickname.value || "나").trim();
-  PLAYER_CODES.forEach((p) => (state.nicknameMap[p] = p === state.myCode ? baseName : `${p}-친구`));
-
-  els.setupCard.classList.add("hidden");
+  els.lobbyCard.classList.add("hidden");
   els.gameCard.classList.remove("hidden");
   els.finalCard.classList.add("hidden");
+  
+  updateRoomState({ phase: 'game', round: 1 });
   setupRound();
 }
 
@@ -120,7 +281,9 @@ function updatePenaltyInfo() {
   const active = PLAYER_CODES.filter((p) => state.penalties[p] > 0)
     .map((p) => `${state.nicknameMap[p]} -${state.penalties[p]}`)
     .join(", ");
-  els.roundPenaltyInfo.textContent = active ? `이번 라운드 시작 페널티: ${active}` : "이번 라운드 시작 페널티 없음";
+  els.roundPenaltyInfo.textContent = active
+    ? `이번 라운드 시작 페널티: ${active}`
+    : "이번 라운드 시작 페널티 없음";
 }
 
 function startTimer() {
@@ -236,7 +399,6 @@ function autoFillAndFinishRound() {
 
 function finishRound() {
   clearInterval(state.timer);
-
   PLAYER_CODES.forEach((p) => {
     if (typeof state.contributions[p] !== "number") state.contributions[p] = 0;
     if (typeof state.declarations[p] !== "number") state.declarations[p] = 0;
@@ -259,7 +421,6 @@ function finishRound() {
     const available = TOKENS_PER_ROUND - penalty;
     const kept = Math.max(0, available - contribution);
     const roundScore = kept + share + (coop ? COOP_BONUS : 0);
-
     state.totalScores[p] += roundScore;
     state.contributionHistory[p].push(contribution);
 
@@ -279,6 +440,7 @@ function finishRound() {
   applyNextRoundPenalties();
   renderMe();
   renderLeaderboard();
+
   els.warningPanel.classList.add("hidden");
   els.roundResult.classList.remove("hidden");
 }
@@ -331,12 +493,14 @@ function showFinal() {
   const coopKing = [...PLAYER_CODES].sort(
     (a, b) => avgContributionRate(b) - avgContributionRate(a)
   )[0];
-  const avgRate = (PLAYER_CODES.reduce((sum, p) => sum + avgContributionRate(p), 0) / PLAYER_CODES.length).toFixed(1);
+  const avgRate = (
+    PLAYER_CODES.reduce((sum, p) => sum + avgContributionRate(p), 0) / PLAYER_CODES.length
+  ).toFixed(1);
 
   els.finalHighlights.innerHTML = `
-    <div><strong>우승자</strong><span>${state.nicknameMap[winner]}</span></div>
-    <div><strong>협력왕</strong><span>${state.nicknameMap[coopKing]}</span></div>
-    <div><strong>전체 평균 기여율</strong><span>${avgRate}%</span></div>
+    <p><strong>우승자</strong> ${state.nicknameMap[winner]}</p>
+    <p><strong>협력왕</strong> ${state.nicknameMap[coopKing]}</p>
+    <p><strong>전체 평균 기여율</strong> ${avgRate}%</p>
   `;
 
   ranking.forEach((p, idx) => {
@@ -360,10 +524,19 @@ function avgContributionRate(player) {
 
 function resetToSetup() {
   clearInterval(state.timer);
-  els.setupCard.classList.remove("hidden");
+  if (roomChannel) roomChannel.unsubscribe();
+  
+  state.roomId = null;
+  state.inviteCode = "";
+  state.players = [];
+  state.isHost = false;
+  
+  els.lobbyCard.classList.remove("hidden");
   els.gameCard.classList.add("hidden");
   els.finalCard.classList.add("hidden");
-  generateInviteCode();
+  els.inviteCode.textContent = "-";
+  els.joinCodeInput.value = "";
+  updateLobbyStatus();
 }
 
 function clampInt(value, min, max, fallback) {
