@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>5인 협력 심리전 투자 게임</title>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <main class="container">
@@ -13,25 +15,51 @@
       <p>7라운드 동안 약속, 배신, 경고표, 협력 보너스로 점수를 겨루세요.</p>
     </header>
 
-    <section class="card setup" id="setupCard">
-      <h2>방 생성</h2>
-      <div class="room-row">
-        <div>
-          <p>친구 초대 코드</p>
-          <strong id="inviteCode">-</strong>
-        </div>
-        <button id="generateCodeBtn" class="primary">초대 코드 생성</button>
-      </div>
+    <!-- 룸 입장 화면 -->
+    <section class="card setup" id="lobbyCard">
+      <h2>게임 입장</h2>
       <div class="grid">
-        <label>내 닉네임
+        <label>닉네임
           <input id="myNickname" type="text" maxlength="14" placeholder="닉네임 입력" />
         </label>
         <label>내 플레이어 슬롯
           <select id="myPlayerCode"></select>
         </label>
       </div>
+      <div class="room-row">
+        <div>
+          <p>방 코드 (방장이 공유)</p>
+          <strong id="inviteCode">-</strong>
+        </div>
+        <button id="generateCodeBtn" class="primary">새 방 만들기</button>
+      </div>
+      <div class="room-row" style="margin-top:8px">
+        <input id="joinCodeInput" type="text" maxlength="10" placeholder="방 코드 입력 후 참가" style="flex:1" />
+        <button id="joinRoomBtn" class="secondary">방 참가</button>
+      </div>
+      <p id="lobbyStatus" class="hint"></p>
       <p class="hint">고정 규칙: 5인 멀티 · 7라운드 · 라운드당 20초 · 10토큰 지급 · 공동기금 2.5배 분배</p>
       <button id="startBtn" class="primary">5명 입장 완료, 게임 시작</button>
+    </section>
+
+    <section class="card hidden" id="setupCard">
+      <h2>방 생성</h2>
+      <div class="room-row">
+        <div>
+          <p>친구 초대 코드</p>
+          <strong id="inviteCode2">-</strong>
+        </div>
+      </div>
+      <div class="grid">
+        <label>내 닉네임
+          <input id="myNickname2" type="text" maxlength="14" placeholder="닉네임 입력" />
+        </label>
+        <label>내 플레이어 슬롯
+          <select id="myPlayerCode2"></select>
+        </label>
+      </div>
+      <p class="hint">고정 규칙: 5인 멀티 · 7라운드 · 라운드당 20초 · 10토큰 지급 · 공동기금 2.5배 분배</p>
+      <button id="startBtn2" class="primary">5명 입장 완료, 게임 시작</button>
     </section>
 
     <section class="card hidden" id="gameCard">
@@ -41,109 +69,72 @@
           <p id="timer">남은 시간: 20초</p>
           <p id="roundPenaltyInfo" class="hint"></p>
         </div>
-        <button id="resetBtn" class="danger">게임 초기화</button>
+        <div id="onlineStatus" class="hint"></div>
       </div>
 
-      <div class="declaration-box">
-        <h3>라운드 목표 기여량 선언</h3>
-        <p class="hint">각 플레이어가 이번 라운드에 기여할 목표(0~10)를 선언합니다. 실제 투자와 달라도 됩니다.</p>
-        <div class="entry-row">
-          <span id="declarePlayerLabel">P1 선언</span>
-          <input id="declarationInput" type="number" min="0" max="10" step="1" value="5" />
-          <button id="submitDeclaration" class="primary">선언 제출</button>
-        </div>
-      </div>
+      <div id="entryPanel">
+        <h3>선언 단계</h3>
+        <label id="declarePlayerLabel">P1 선언
+          <input id="declarationInput" type="number" min="0" max="10" value="5" />
+        </label>
+        <button id="submitDeclaration" class="secondary">선언 제출</button>
 
-      <div class="message-box">
-        <h3>제한형 메시지</h3>
-        <p class="hint">현재 입력 차례의 플레이어가 미리 정의된 짧은 메시지를 1개 남길 수 있습니다.</p>
-        <div class="entry-row">
-          <span id="messagePlayerLabel">P1 메시지</span>
+        <h3>메시지</h3>
+        <label id="messagePlayerLabel">P1 메시지
           <select id="messageSelect"></select>
-          <button id="submitMessage">메시지 남기기</button>
-        </div>
+        </label>
+        <button id="submitMessage" class="secondary">메시지 보내기</button>
+
+        <h3>투자 입력</h3>
+        <p id="entryTitle">P1 투자 입력</p>
+        <label>투자 토큰 (0-10)
+          <input id="contributionInput" type="number" min="0" max="10" value="0" />
+        </label>
+        <button id="submitContribution" class="primary">투자 제출</button>
+        <button id="nextPlayer" class="secondary" disabled>다음 플레이어</button>
       </div>
 
-      <div id="entryPanel" class="entry-panel">
-        <h3 id="entryTitle">P1 투자 입력</h3>
-        <p class="hint">0~10토큰 비공개 투자 (미입력 시 0 처리)</p>
-        <input id="contributionInput" type="number" min="0" max="10" step="1" value="0" />
-        <div class="buttons">
-          <button id="submitContribution" class="primary">입력 제출</button>
-          <button id="nextPlayer" disabled>다음 플레이어 준비</button>
-        </div>
-      </div>
-
-      <div id="warningPanel" class="card subcard hidden">
-        <h3>경고표 배분</h3>
-        <p class="hint">각 플레이어는 자신을 제외한 1명에게 경고표 1개를 줍니다.</p>
-        <div class="entry-row">
-          <span id="warningGiverLabel">P1 경고 대상</span>
+      <div id="warningPanel" class="hidden">
+        <h3>경고 단계</h3>
+        <label id="warningGiverLabel">P1 경고 대상
           <select id="warningTarget"></select>
-          <button id="submitWarning" class="primary">경고표 제출</button>
-        </div>
+        </label>
+        <button id="submitWarning" class="primary">경고 제출</button>
       </div>
 
       <div id="roundResult" class="hidden">
         <h3>라운드 결과</h3>
-        <div class="result-grid">
-          <div><strong>전체 투자 총액</strong><span id="totalContribution">0</span></div>
-          <div><strong>2.5배 적용 후 총 분배액</strong><span id="amplifiedFund">0</span></div>
-          <div><strong>1인당 분배액</strong><span id="sharePerPlayer">0</span></div>
-          <div><strong>협력 보너스</strong><span id="coopBonusInfo">없음</span></div>
-        </div>
-
+        <p>총 투자: <strong id="totalContribution">0</strong></p>
+        <p>증폭 기금: <strong id="amplifiedFund">0</strong></p>
+        <p>1인당 배분: <strong id="sharePerPlayer">0</strong></p>
+        <p>협력 보너스: <strong id="coopBonusInfo">없음</strong></p>
         <table>
-          <thead>
-            <tr>
-              <th>닉네임</th>
-              <th>선언</th>
-              <th>투자액</th>
-              <th>남긴 토큰</th>
-              <th>라운드 점수</th>
-              <th>누적 점수</th>
-              <th>경고표(누적)</th>
-            </tr>
-          </thead>
+          <thead><tr><th>플레이어</th><th>선언</th><th>투자</th><th>보유</th><th>라운드점수</th><th>누적</th><th>경고</th></tr></thead>
           <tbody id="resultTableBody"></tbody>
         </table>
-
-        <section class="me-box">
-          <h4>내 정보 (<span id="meCode">P1</span>)</h4>
-          <p>내 투자액: <strong id="myContribution">0</strong></p>
-          <p>내 라운드 점수: <strong id="myRoundScore">0</strong></p>
-          <p>내 누적 점수: <strong id="myTotalScore">0</strong></p>
-        </section>
-
-        <h4>누적 점수 리더보드</h4>
-        <ol id="leaderboard"></ol>
-
-        <div class="buttons">
-          <button id="nextRoundBtn" class="primary">다음 라운드</button>
+        <div id="myResult">
+          <p>내 코드: <strong id="meCode"></strong></p>
+          <p>내 투자: <strong id="myContribution"></strong></p>
+          <p>이번 라운드: <strong id="myRoundScore"></strong></p>
+          <p>누적 점수: <strong id="myTotalScore"></strong></p>
         </div>
+        <h4>리더보드</h4>
+        <ol id="leaderboard"></ol>
+        <button id="nextRoundBtn" class="primary">다음 라운드</button>
       </div>
     </section>
 
     <section class="card hidden" id="finalCard">
-      <h2>최종 결과</h2>
-      <p>7라운드가 종료되었습니다.</p>
-      <div id="finalHighlights" class="result-grid"></div>
+      <h2>게임 종료!</h2>
+      <div id="finalHighlights"></div>
       <table>
-        <thead>
-          <tr>
-            <th>순위</th>
-            <th>닉네임</th>
-            <th>최종 누적 점수</th>
-            <th>평균 기여율(%)</th>
-            <th>총 경고표</th>
-          </tr>
-        </thead>
+        <thead><tr><th>순위</th><th>플레이어</th><th>총점</th><th>평균기여율</th><th>경고수</th></tr></thead>
         <tbody id="finalTableBody"></tbody>
       </table>
-      <button id="restartBtn" class="primary">새 게임 시작</button>
+      <button id="resetBtn" class="secondary">처음으로</button>
+      <button id="restartBtn" class="primary">같은 방 재시작</button>
     </section>
   </main>
-
   <script src="script.js"></script>
 </body>
 </html>
